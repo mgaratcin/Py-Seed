@@ -1,10 +1,11 @@
 
+apt install python3-pip
 
+pip install bip-utils
 
+chmod +x keys.py
 
-
-
-
+python3 keys.py
 
 root@C.12042212:~$ nano keys.py
 root@C.12042212:~$ chmod +x keys.py
