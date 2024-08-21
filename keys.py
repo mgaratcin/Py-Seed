@@ -1,8 +1,13 @@
-from bip_utils import Bip39MnemonicValidator, Bip39MnemonicGenerator, Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
-import itertools
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from bip_utils import Bip39MnemonicValidator, Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
+from concurrent.futures import ProcessPoolExecutor
 from typing import List
+import threading
+import time
+import itertools
 
+# Global counter to keep track of addresses checked
+address_counter = 0
+counter_lock = threading.Lock()
 
 def generate_btc_address_from_mnemonic(mnemonic: str) -> str:
     """Generate a Bitcoin P2PKH address from a mnemonic seed phrase."""
@@ -26,9 +31,10 @@ def is_valid_mnemonic(mnemonic: str) -> bool:
         return False
 
 
-def worker_permutation_search(seed_words: List[str], target_address: str, permutations):
-    """Thread worker function to search through a chunk of permutations."""
-    for permutation in permutations:
+def worker_permutation_search(seed_words: List[str], target_address: str, batch_size: int):
+    """Process worker function to search for the target address."""
+    global address_counter
+    for permutation in itertools.permutations(seed_words, len(seed_words)):
         mnemonic = " ".join(permutation)
         
         # Validate the mnemonic before attempting to generate an address
@@ -37,27 +43,35 @@ def worker_permutation_search(seed_words: List[str], target_address: str, permut
         
         generated_address = generate_btc_address_from_mnemonic(mnemonic)
         
+        # Update the global counter for addresses checked
+        with counter_lock:
+            address_counter += 1
+        
         if generated_address == target_address:
             return mnemonic, generated_address
     return None
 
 
-def find_btc_address(seed_words: List[str], target_address: str, max_workers=200):
-    """Main function to find the target BTC address using multithreading."""
-    # Get all permutations of the seed words
-    permutations = list(itertools.permutations(seed_words))
-    
-    # Divide the permutations into chunks for each thread
-    chunk_size = len(permutations) // max_workers
-    chunks = [permutations[i:i + chunk_size] for i in range(0, len(permutations), chunk_size)]
+def print_address_counter():
+    """Thread function to print the address counter every 10 seconds."""
+    while True:
+        time.sleep(10)
+        with counter_lock:
+            print(f"Addresses checked: {address_counter}")
 
-    # Create a thread pool to manage permutation search
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Generate tasks for each chunk of permutations
-        futures = [executor.submit(worker_permutation_search, seed_words, target_address, chunk) for chunk in chunks]
+
+def find_btc_address(seed_words: List[str], target_address: str, max_workers=8):
+    """Main function to find the target BTC address using multiprocessing."""
+    # Start the address counter thread
+    counter_thread = threading.Thread(target=print_address_counter, daemon=True)
+    counter_thread.start()
+
+    # Create a process pool to manage permutation search
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(worker_permutation_search, seed_words, target_address, 1000) for _ in range(max_workers)]
         
         # Wait for tasks to complete
-        for future in as_completed(futures):
+        for future in futures:
             result = future.result()
             if result:
                 mnemonic, address = result
@@ -68,7 +82,7 @@ def find_btc_address(seed_words: List[str], target_address: str, max_workers=200
 
 
 # Example usage
-seed_words = ["dentist", "injury", "amount", "ability", "december", "opinion", "bag", "cigar", "screen", "december", "trim", "heavy"]
+seed_words = ["dentist", "injury", "ability", "amount", "december", "opinion", "bag", "cigar", "screen", "december", "trim", "heavy"]
 target_address = "12tabzW1X7hHggJPm6xxQ6cmBtEmirPt26"
 
-find_btc_address(seed_words, target_address, max_workers=200)
+find_btc_address(seed_words, target_address, max_workers=8)
