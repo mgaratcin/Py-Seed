@@ -31,25 +31,31 @@ def is_valid_mnemonic(mnemonic: str) -> bool:
         return False
 
 
-def worker_permutation_search(seed_words: List[str], target_address: str, batch_size: int):
-    """Process worker function to search for the target address."""
+def worker_dynamic_search(seed_words: List[str], target_address: str, permutations_queue):
+    """Worker function that pulls from a queue and checks for the target address."""
     global address_counter
-    for permutation in itertools.permutations(seed_words, len(seed_words)):
+    while True:
+        try:
+            # Get the next permutation from the queue
+            permutation = next(permutations_queue)
+        except StopIteration:
+            # No more permutations, stop the worker
+            return None
+
         mnemonic = " ".join(permutation)
-        
+
         # Validate the mnemonic before attempting to generate an address
         if not is_valid_mnemonic(mnemonic):
             continue  # Skip invalid mnemonics
-        
+
         generated_address = generate_btc_address_from_mnemonic(mnemonic)
-        
+
         # Update the global counter for addresses checked
         with counter_lock:
             address_counter += 1
-        
+
         if generated_address == target_address:
             return mnemonic, generated_address
-    return None
 
 
 def print_address_counter():
@@ -66,10 +72,13 @@ def find_btc_address(seed_words: List[str], target_address: str, max_workers=64)
     counter_thread = threading.Thread(target=print_address_counter, daemon=True)
     counter_thread.start()
 
+    # Create an iterator for all permutations of the seed words
+    permutations_iterator = iter(itertools.permutations(seed_words))
+
     # Create a process pool to manage permutation search
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(worker_permutation_search, seed_words, target_address, 1000) for _ in range(max_workers)]
-        
+        futures = [executor.submit(worker_dynamic_search, seed_words, target_address, permutations_iterator) for _ in range(max_workers)]
+
         # Wait for tasks to complete
         for future in futures:
             result = future.result()
@@ -78,6 +87,7 @@ def find_btc_address(seed_words: List[str], target_address: str, max_workers=64)
                 print(f"Found matching mnemonic: {mnemonic}")
                 print(f"Matching address: {address}")
                 return
+
     print("No matching address found.")
 
 
