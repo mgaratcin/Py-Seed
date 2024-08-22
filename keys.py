@@ -1,13 +1,13 @@
 from bip_utils import Bip39MnemonicValidator, Bip39SeedGenerator, Bip44, Bip44Coins, Bip44Changes
 from concurrent.futures import ProcessPoolExecutor
-from typing import List
+from itertools import permutations, islice
+import multiprocessing
 import threading
 import time
-import itertools
+
 
 # Global counter to keep track of addresses checked
-address_counter = 0
-counter_lock = threading.Lock()
+address_counter = multiprocessing.Value('i', 0)
 
 def generate_btc_address_from_mnemonic(mnemonic: str) -> str:
     """Generate a Bitcoin P2PKH address from a mnemonic seed phrase."""
@@ -31,53 +31,49 @@ def is_valid_mnemonic(mnemonic: str) -> bool:
         return False
 
 
-def worker_dynamic_search(seed_words: List[str], target_address: str, permutations_queue):
-    """Worker function that pulls from a queue and checks for the target address."""
+def worker_dynamic_search(seed_words: list, target_address: str, batch_size: int):
+    """Worker function to generate and check BTC addresses in batches."""
     global address_counter
+    valid_mnemonics = []
+    
+    # Get all permutations of the seed words
+    perm_iterator = permutations(seed_words)
+
     while True:
-        try:
-            # Get the next permutation from the queue
-            permutation = next(permutations_queue)
-        except StopIteration:
-            # No more permutations, stop the worker
+        # Process a batch of permutations at once to reduce overhead
+        batch = list(islice(perm_iterator, batch_size))
+        if not batch:
             return None
 
-        mnemonic = " ".join(permutation)
+        for perm in batch:
+            mnemonic = " ".join(perm)
+            if is_valid_mnemonic(mnemonic):
+                generated_address = generate_btc_address_from_mnemonic(mnemonic)
 
-        # Validate the mnemonic before attempting to generate an address
-        if not is_valid_mnemonic(mnemonic):
-            continue  # Skip invalid mnemonics
+                # Update the global counter atomically
+                with address_counter.get_lock():
+                    address_counter.value += 1
 
-        generated_address = generate_btc_address_from_mnemonic(mnemonic)
-
-        # Update the global counter for addresses checked
-        with counter_lock:
-            address_counter += 1
-
-        if generated_address == target_address:
-            return mnemonic, generated_address
+                if generated_address == target_address:
+                    return mnemonic, generated_address
+    return None
 
 
 def print_address_counter():
     """Thread function to print the address counter every 10 seconds."""
     while True:
         time.sleep(10)
-        with counter_lock:
-            print(f"Addresses checked: {address_counter}")
+        print(f"Addresses checked: {address_counter.value}")
 
 
-def find_btc_address(seed_words: List[str], target_address: str, max_workers=64):
+def find_btc_address(seed_words: list, target_address: str, max_workers=64, batch_size=1000):
     """Main function to find the target BTC address using multiprocessing."""
     # Start the address counter thread
     counter_thread = threading.Thread(target=print_address_counter, daemon=True)
     counter_thread.start()
 
-    # Create an iterator for all permutations of the seed words
-    permutations_iterator = iter(itertools.permutations(seed_words))
-
-    # Create a process pool to manage permutation search
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(worker_dynamic_search, seed_words, target_address, permutations_iterator) for _ in range(max_workers)]
+        futures = [executor.submit(worker_dynamic_search, seed_words, target_address, batch_size) for _ in range(max_workers)]
 
         # Wait for tasks to complete
         for future in futures:
@@ -95,4 +91,5 @@ def find_btc_address(seed_words: List[str], target_address: str, max_workers=64)
 seed_words = ["dentist", "injury", "ability", "amount", "december", "opinion", "bag", "cigar", "screen", "december", "trim", "heavy"]
 target_address = "12tabzW1X7hHggJPm6xxQ6cmBtEmirPt26"
 
-find_btc_address(seed_words, target_address, max_workers=64)
+# Increasing batch size can improve performance by reducing overhead
+find_btc_address(seed_words, target_address, max_workers=64, batch_size=1000)
