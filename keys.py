@@ -66,7 +66,7 @@ def print_address_counter():
             print(f"Addresses checked: {address_counter}")
 
 
-def find_btc_address(seed_words: List[str], target_address: str, max_workers=64):
+def find_btc_address(seed_words: List[str], target_address: str, max_workers=256):
     """Main function to find the target BTC address using multiprocessing."""
     # Start the address counter thread
     counter_thread = threading.Thread(target=print_address_counter, daemon=True)
@@ -95,4 +95,4 @@ def find_btc_address(seed_words: List[str], target_address: str, max_workers=64)
 seed_words = ["dentist", "injury", "ability", "amount", "december", "opinion", "bag", "cigar", "screen", "december", "trim", "heavy"]
 target_address = "12tabzW1X7hHggJPm6xxQ6cmBtEmirPt26"
 
-find_btc_address(seed_words, target_address, max_workers=64)
+find_btc_address(seed_words, target_address, max_workers=256)
