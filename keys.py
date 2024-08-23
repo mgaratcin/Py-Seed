@@ -88,7 +88,7 @@ def find_btc_address(seed_words: list, target_address: str, max_workers=64, batc
 
 
 # Example usage
-seed_words = ["coffee", "order", "black", "freedom", "battle", "liberty", "shadow", "voice", "evil", "hero", "history", "strike"]
+seed_words = ["coffee", "order", "black", "bridge", "battle", "liberty", "shadow", "anger", "secret", "pyramid", "network", "market"]
 target_address = "1KfZGvwZxsvSmemoCmEV75uqcNzYBHjkHZ"
 
 # Increasing batch size can improve performance by reducing overhead
